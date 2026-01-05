@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   PlusCircle, 
@@ -13,8 +12,7 @@ import {
   ArrowDownRight,
   Target,
   Settings,
-  Wallet,
-  Calendar
+  Wallet
 } from 'lucide-react';
 import { 
   XAxis, 
@@ -24,7 +22,6 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
-  LineChart,
   Line,
   ComposedChart
 } from 'recharts';
@@ -55,8 +52,12 @@ const App: React.FC = () => {
       operations: []
     };
     if (!saved) return defaultState;
-    const parsed = JSON.parse(saved);
-    return { ...defaultState, ...parsed };
+    try {
+      const parsed = JSON.parse(saved);
+      return { ...defaultState, ...parsed };
+    } catch (e) {
+      return defaultState;
+    }
   });
 
   const [isOpModalOpen, setIsOpModalOpen] = useState(false);
@@ -72,17 +73,17 @@ const App: React.FC = () => {
 
   // 🧮 Lógica de Cálculo (Core Engine)
   const stats = useMemo(() => {
-    const totalDeposits = bankroll.transactions
+    const totalDeposits = (bankroll.transactions || [])
       .filter(t => t.type === TransactionType.DEPOSIT)
-      .reduce((acc, t) => acc + t.amount, 0) + bankroll.initialBalance;
+      .reduce((acc, t) => acc + t.amount, 0) + (bankroll.initialBalance || 0);
     
-    const totalWithdrawals = bankroll.transactions
+    const totalWithdrawals = (bankroll.transactions || [])
       .filter(t => t.type === TransactionType.WITHDRAWAL)
       .reduce((acc, t) => acc + t.amount, 0);
 
     const netInvestment = totalDeposits - totalWithdrawals;
     
-    const finishedOps = bankroll.operations.filter(o => o.status !== OperationStatus.PENDING);
+    const finishedOps = (bankroll.operations || []).filter(o => o.status !== OperationStatus.PENDING);
     const totalProfit = finishedOps.reduce((acc, o) => acc + o.profitLoss, 0);
     const totalStake = finishedOps.reduce((acc, o) => acc + o.stakeAmount, 0);
     
@@ -111,30 +112,28 @@ const App: React.FC = () => {
     };
   }, [bankroll]);
 
-  // 🚀 Melhoria Visual Avançada: Linha de Meta no Gráfico
+  // 🚀 Curva de Performance vs Meta
   const chartData = useMemo(() => {
     let cumulative = bankroll.initialBalance;
     const data = [{ 
-      name: 'Start', 
+      name: 'Início', 
       balance: cumulative, 
       goal: cumulative 
     }];
     
     const timeline = [
-      ...bankroll.operations.map(o => ({ date: o.date, value: o.profitLoss, type: 'OP' })),
-      ...bankroll.transactions.map(t => ({ 
+      ...(bankroll.operations || []).map(o => ({ date: o.date, value: o.profitLoss })),
+      ...(bankroll.transactions || []).map(t => ({ 
         date: t.date, 
-        value: t.type === TransactionType.DEPOSIT ? t.amount : -t.amount,
-        type: 'TX'
+        value: t.type === TransactionType.DEPOSIT ? t.amount : -t.amount
       }))
     ].sort((a, b) => a.date - b.date);
 
     let goalCumulative = bankroll.initialBalance;
     const dailyGrowthFactor = 1 + (bankroll.dailyGoalPercent / 100);
 
-    timeline.forEach((item, index) => {
+    timeline.forEach((item) => {
       cumulative += item.value;
-      // Simulação simplificada de meta: crescimento linear projetado por evento
       goalCumulative *= dailyGrowthFactor; 
       
       data.push({ 
@@ -156,7 +155,7 @@ const App: React.FC = () => {
     const stakeAmount = units * stats.unitValue;
     
     if (stakeAmount > stats.currentBalance && stats.currentBalance > 0) {
-      alert("Gestão de Risco: Valor da stake excede o saldo disponível.");
+      alert("⚠️ Gestão de Risco: Stake excede o saldo disponível.");
       return;
     }
 
@@ -179,7 +178,7 @@ const App: React.FC = () => {
 
     setBankroll(prev => ({
       ...prev,
-      operations: [newOp, ...prev.operations]
+      operations: [newOp, ...(prev.operations || [])]
     }));
     setIsOpModalOpen(false);
   };
@@ -191,7 +190,7 @@ const App: React.FC = () => {
     const type = fd.get('type') as TransactionType;
 
     if (type === TransactionType.WITHDRAWAL && stats.currentBalance < amount) {
-      alert("Saldo insuficiente para saque.");
+      alert("❌ Saldo insuficiente para saque.");
       return;
     }
 
@@ -205,13 +204,13 @@ const App: React.FC = () => {
 
     setBankroll(prev => ({
       ...prev,
-      transactions: [newTx, ...prev.transactions]
+      transactions: [newTx, ...(prev.transactions || [])]
     }));
     setIsTxModalOpen(false);
   };
 
   const deleteOperation = (id: string) => {
-    if (window.confirm("Tem certeza que deseja excluir esta operação?")) {
+    if (window.confirm("Confirmar exclusão definitiva?")) {
       setBankroll(prev => ({
         ...prev,
         operations: prev.operations.filter(o => o.id !== id)
@@ -233,40 +232,40 @@ const App: React.FC = () => {
 
   const runAiAnalysis = async () => {
     if (bankroll.operations.length < 3) {
-      setAiAnalysis("Registre ao menos 3 operações para uma análise precisa.");
+      setAiAnalysis("Registre ao menos 3 operações para análise.");
       return;
     }
     setIsAnalyzing(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Analise estes dados de gestão de banca de apostas e forneça 3 recomendações cruciais em português (formato bullet points):
-      - Saldo Atual: R$${stats.currentBalance.toFixed(2)}
+      const prompt = `Analise os seguintes dados de banca de apostas:
+      - Saldo: R$${stats.currentBalance.toFixed(2)}
       - ROI: ${stats.roi.toFixed(2)}%
       - WinRate: ${stats.winRate.toFixed(2)}%
       - Meta Diária: ${bankroll.dailyGoalPercent}%
-      - Risco por Unidade: ${bankroll.unitValuePercent}% (R$${stats.unitValue.toFixed(2)})`;
+      Forneça 3 dicas curtas e técnicas de gestão de risco em português.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt
       });
-      setAiAnalysis(response.text || "Insights indisponíveis.");
+      setAiAnalysis(response.text || "Sem insights no momento.");
     } catch (e) {
-      setAiAnalysis("Erro na análise via Gemini AI.");
+      setAiAnalysis("Erro na conexão com Gemini AI.");
     } finally {
       setIsAnalyzing(false);
     }
   };
 
   const filteredOperations = useMemo(() => 
-    filter === 'ALL' ? bankroll.operations : bankroll.operations.filter(o => o.status === filter)
+    filter === 'ALL' ? bankroll.operations : (bankroll.operations || []).filter(o => o.status === filter)
   , [bankroll.operations, filter]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50 p-4 md:p-8 font-sans selection:bg-emerald-500/30">
+    <div className="min-h-screen bg-slate-950 text-slate-50 p-4 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
         
-        {/* Header Section */}
+        {/* Header */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
           <div className="flex items-center gap-4">
             <div className="h-12 w-12 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
@@ -276,7 +275,7 @@ const App: React.FC = () => {
               <h1 className="text-3xl font-black bg-gradient-to-r from-emerald-400 to-cyan-500 bg-clip-text text-transparent uppercase tracking-tighter">
                 Elite Bankroll
               </h1>
-              <p className="text-slate-500 font-bold text-xs uppercase tracking-widest">Architect System v3</p>
+              <p className="text-slate-500 font-bold text-xs uppercase tracking-widest">Risk Architect v3.1</p>
             </div>
           </div>
           <div className="flex gap-3 w-full md:w-auto">
@@ -292,15 +291,15 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {/* Statistics Cards */}
+        {/* Dashboard Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Saldo Atual', val: `R$ ${stats.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, sub: `1un = R$ ${stats.unitValue.toFixed(2)}`, icon: Wallet, color: 'text-white' },
-            { label: 'Lucro Líquido', val: `R$ ${stats.totalProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, sub: 'P/L Acumulado', icon: stats.totalProfit >= 0 ? ArrowUpRight : ArrowDownRight, color: stats.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400' },
-            { label: 'ROI (%)', val: `${stats.roi.toFixed(2)}%`, sub: `Meta: ${bankroll.dailyGoalPercent}%`, icon: TrendingUp, color: stats.roi >= 0 ? 'text-emerald-400' : 'text-rose-400' },
-            { label: 'Performance', val: `${stats.winRate.toFixed(1)}%`, sub: `${stats.greens}G / ${stats.reds}R`, icon: Target, color: 'text-cyan-400' },
+            { label: 'Saldo Atual', val: `R$ ${stats.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, sub: `1un = R$ ${stats.unitValue.toFixed(2)}`, color: 'text-white' },
+            { label: 'P/L Líquido', val: `R$ ${stats.totalProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, sub: 'Acumulado', color: stats.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+            { label: 'ROI (%)', val: `${stats.roi.toFixed(2)}%`, sub: `Meta: ${bankroll.dailyGoalPercent}%`, color: stats.roi >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+            { label: 'WinRate', val: `${stats.winRate.toFixed(1)}%`, sub: `${stats.greens}G / ${stats.reds}R`, color: 'text-cyan-400' },
           ].map((s, i) => (
-            <div key={i} className="bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
+            <div key={i} className="bg-slate-900/50 border border-slate-800 rounded-3xl p-6 shadow-xl">
               <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mb-1">{s.label}</p>
               <h2 className={`text-2xl font-black ${s.color}`}>{s.val}</h2>
               <p className="text-slate-500 text-xs mt-2 font-bold uppercase tracking-widest">{s.sub}</p>
@@ -308,15 +307,11 @@ const App: React.FC = () => {
           ))}
         </div>
 
-        {/* Dashboard Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
-            
-            {/* 🚀 Curva de Equity com Linha de Meta */}
-            <div className="bg-slate-900/40 border border-slate-800/60 rounded-3xl p-8 h-[400px] shadow-2xl">
-              <h3 className="font-black uppercase text-xs tracking-[0.3em] text-slate-500 mb-8 flex items-center gap-3">
-                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></div> Curva de Equity vs Meta
-              </h3>
+            {/* Chart */}
+            <div className="bg-slate-900/40 border border-slate-800/60 rounded-3xl p-8 h-[400px]">
+              <h3 className="font-black uppercase text-xs tracking-[0.3em] text-slate-500 mb-8 flex items-center gap-3">Equity Curve</h3>
               <ResponsiveContainer width="100%" height="80%">
                 <ComposedChart data={chartData}>
                   <defs>
@@ -327,42 +322,22 @@ const App: React.FC = () => {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} opacity={0.2} />
                   <XAxis dataKey="name" stroke="#475569" fontSize={10} axisLine={false} tickLine={false} />
-                  <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} tickFormatter={(v) => `R$${v}`} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px' }}
-                    itemStyle={{ fontWeight: 'bold' }}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="balance" 
-                    name="Saldo Real"
-                    stroke="#10b981" 
-                    fill="url(#colorBal)" 
-                    strokeWidth={3} 
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="goal" 
-                    name="Meta Projetada"
-                    stroke="#f59e0b" 
-                    strokeDasharray="5 5" 
-                    dot={false} 
-                    strokeWidth={2}
-                  />
+                  <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '12px' }} />
+                  <Area type="monotone" dataKey="balance" stroke="#10b981" fill="url(#colorBal)" strokeWidth={3} />
+                  <Line type="monotone" dataKey="goal" stroke="#f59e0b" strokeDasharray="5 5" dot={false} strokeWidth={2} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
 
-            {/* History Table */}
-            <div className="bg-slate-900/40 border border-slate-800/60 rounded-3xl overflow-hidden shadow-2xl">
+            {/* Table */}
+            <div className="bg-slate-900/40 border border-slate-800/60 rounded-3xl overflow-hidden">
               <div className="p-8 border-b border-slate-800/60 flex justify-between items-center bg-slate-900/20">
-                <h3 className="font-black uppercase text-xs tracking-[0.3em] text-slate-500 flex items-center gap-3">
-                  <History size={16} className="text-emerald-500" /> Histórico de Operações
-                </h3>
+                <h3 className="font-black uppercase text-xs tracking-[0.3em] text-slate-500">Histórico</h3>
                 <div className="flex gap-2">
                   {['ALL', 'GREEN', 'RED', 'REFUND'].map(st => (
-                    <button key={st} onClick={() => setFilter(st as any)} className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase transition ${filter === st ? 'bg-slate-800 text-white' : 'text-slate-600 hover:text-slate-400'}`}>
-                      {st === 'ALL' ? 'Todos' : st}
+                    <button key={st} onClick={() => setFilter(st as any)} className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase transition ${filter === st ? 'bg-slate-800 text-white' : 'text-slate-600'}`}>
+                      {st}
                     </button>
                   ))}
                 </div>
@@ -373,180 +348,111 @@ const App: React.FC = () => {
                     <tr>
                       <th className="px-8 py-5 text-left">Data</th>
                       <th className="px-8 py-5 text-left">Evento</th>
-                      <th className="px-8 py-5 text-center">Stake</th>
                       <th className="px-8 py-5 text-center">Odd</th>
-                      <th className="px-8 py-5 text-right">Resultado</th>
-                      <th className="px-8 py-5 text-right"></th>
+                      <th className="px-8 py-5 text-right">P/L</th>
+                      <th className="px-8 py-5"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/40 text-sm">
                     {filteredOperations.map(op => (
                       <tr key={op.id} className="hover:bg-slate-800/20 transition">
-                        <td className="px-8 py-5 text-slate-500 text-xs font-mono">{new Date(op.date).toLocaleDateString()}</td>
+                        <td className="px-8 py-5 text-slate-500 font-mono text-xs">{new Date(op.date).toLocaleDateString()}</td>
                         <td className="px-8 py-5 font-bold">{op.description}</td>
-                        <td className="px-8 py-5 text-center font-bold">{op.stakeUnits}un</td>
-                        <td className="px-8 py-5 text-center text-slate-400 font-mono">{op.odd.toFixed(2)}</td>
-                        <td className={`px-8 py-5 text-right font-black ${op.status === 'GREEN' ? 'text-emerald-400' : op.status === 'RED' ? 'text-rose-400' : 'text-slate-500'}`}>
-                          {op.status === 'GREEN' ? '+' : ''}{op.profitLoss.toFixed(2)}
+                        <td className="px-8 py-5 text-center text-slate-400">{op.odd.toFixed(2)}</td>
+                        <td className={`px-8 py-5 text-right font-black ${op.status === 'GREEN' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {op.profitLoss.toFixed(2)}
                         </td>
                         <td className="px-8 py-5 text-right">
-                          <button onClick={() => deleteOperation(op.id)} className="text-slate-700 hover:text-rose-500 transition">
-                            <Trash2 size={16} />
-                          </button>
+                          <button onClick={() => deleteOperation(op.id)} className="text-slate-700 hover:text-rose-500"><Trash2 size={16} /></button>
                         </td>
                       </tr>
                     ))}
-                    {filteredOperations.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="py-20 text-center text-slate-600 uppercase font-black tracking-[0.5em] text-xs">Sem registros</td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
 
-          {/* Sidebar Insights */}
+          {/* Sidebar */}
           <div className="space-y-6">
             <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-3xl p-8 shadow-2xl relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:opacity-10 transition">
                 <BrainCircuit size={100} />
               </div>
               <h3 className="font-black text-indigo-400 uppercase text-[10px] tracking-[0.3em] mb-6 flex items-center gap-3">
-                <BrainCircuit size={18} /> IA Strategic Advisor
+                <BrainCircuit size={18} /> IA Strategy
               </h3>
-              <div className="min-h-[160px] mb-8">
+              <div className="min-h-[120px] mb-8">
                 {isAnalyzing ? (
-                  <div className="space-y-3 animate-pulse">
-                    <div className="h-3 bg-indigo-500/20 rounded w-full"></div>
-                    <div className="h-3 bg-indigo-500/20 rounded w-5/6"></div>
-                    <div className="h-3 bg-indigo-500/20 rounded w-4/6"></div>
-                  </div>
+                  <div className="space-y-2 animate-pulse"><div className="h-2 bg-indigo-500/20 rounded w-full"></div><div className="h-2 bg-indigo-500/20 rounded w-5/6"></div></div>
                 ) : (
-                  <p className="text-sm text-slate-300 leading-relaxed font-bold italic">
-                    {aiAnalysis || "Solicite uma análise para receber diretrizes baseadas no seu desempenho real e variância."}
-                  </p>
+                  <p className="text-sm text-slate-300 italic">{aiAnalysis || "Clique para analisar seu desempenho."}</p>
                 )}
               </div>
-              <button onClick={runAiAnalysis} disabled={isAnalyzing} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition shadow-lg shadow-indigo-600/20">
-                {isAnalyzing ? "Processando..." : "Analisar Banca"}
-              </button>
+              <button onClick={runAiAnalysis} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition">Analisar Agora</button>
             </div>
 
             {stats.currentBalance < stats.netInvestment * 0.8 && stats.netInvestment > 0 && (
-              <div className="bg-rose-500/10 border border-rose-500/30 rounded-3xl p-6 flex gap-4 shadow-xl">
+              <div className="bg-rose-500/10 border border-rose-500/30 rounded-3xl p-6 flex gap-4">
                 <AlertTriangle className="text-rose-500 shrink-0" size={24} />
-                <div>
-                  <p className="font-black text-rose-500 uppercase text-[10px] tracking-widest mb-1">Risco Elevado</p>
-                  <p className="text-slate-400 text-xs font-bold leading-snug">Drawdown detectado. Reduza o tamanho da unidade para preservar capital.</p>
-                </div>
+                <p className="text-slate-400 text-xs font-bold">Drawdown alto. Considere reduzir a stake.</p>
               </div>
             )}
-
-            <div className="bg-slate-900/30 border border-slate-800 rounded-3xl p-6 space-y-4">
-              <div className="flex justify-between items-center">
-                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Progresso Meta</h4>
-                <span className={`text-[10px] font-black ${stats.totalProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                  {((stats.totalProfit / (stats.netInvestment || 1)) * 100).toFixed(1)}% total
-                </span>
-              </div>
-              <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                <div 
-                  className="bg-emerald-500 h-full rounded-full transition-all duration-1000" 
-                  style={{ width: `${Math.min(100, Math.max(0, (stats.currentBalance / (stats.netInvestment || 1)) * 100))}%` }}
-                ></div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Operation Modal */}
+      {/* Modals */}
       {isOpModalOpen && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleAddOperation} className="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 max-w-md w-full space-y-6 shadow-2xl relative">
-            <button type="button" onClick={() => setIsOpModalOpen(false)} className="absolute top-6 right-6 text-slate-500 hover:text-white transition"><X size={24}/></button>
-            <h2 className="text-2xl font-black uppercase tracking-tighter">Registrar Entrada</h2>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Unidades</label>
-                  <input name="units" type="number" step="0.25" required className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold text-emerald-400 outline-none" defaultValue="1" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Odd</label>
-                  <input name="odd" type="number" step="0.01" required className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold text-cyan-400 outline-none" placeholder="1.90" />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Descrição</label>
-                <input name="description" required className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold outline-none" placeholder="Ex: Over 2.5 gols" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Status</label>
-                  <select name="status" className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold outline-none appearance-none">
-                    <option value="PENDING">PENDENTE</option>
-                    <option value="GREEN">WIN (GREEN)</option>
-                    <option value="RED">LOSS (RED)</option>
-                    <option value="REFUND">VOID</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Categoria</label>
-                  <input name="category" className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold outline-none" defaultValue="Futebol" />
-                </div>
-              </div>
+          <form onSubmit={handleAddOperation} className="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 max-w-md w-full space-y-6 relative">
+            <button type="button" onClick={() => setIsOpModalOpen(false)} className="absolute top-6 right-6 text-slate-500"><X size={24}/></button>
+            <h2 className="text-2xl font-black uppercase">Registrar Entrada</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <input name="units" type="number" step="0.25" required className="w-full bg-slate-800 rounded-xl px-4 py-3 font-bold outline-none" defaultValue="1" placeholder="Unidades" />
+              <input name="odd" type="number" step="0.01" required className="w-full bg-slate-800 rounded-xl px-4 py-3 font-bold outline-none" placeholder="Odd (ex: 1.90)" />
             </div>
-            <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 py-4 rounded-xl font-black uppercase tracking-widest text-sm transition shadow-lg shadow-emerald-600/20">Salvar Entrada</button>
+            <input name="description" required className="w-full bg-slate-800 rounded-xl px-4 py-3 font-bold outline-none" placeholder="Descrição do evento" />
+            <div className="grid grid-cols-2 gap-4">
+              <select name="status" className="w-full bg-slate-800 rounded-xl px-4 py-3 font-bold outline-none">
+                <option value="GREEN">WIN (GREEN)</option>
+                <option value="RED">LOSS (RED)</option>
+                <option value="REFUND">VOID</option>
+              </select>
+              <input name="category" className="w-full bg-slate-800 rounded-xl px-4 py-3 font-bold outline-none" defaultValue="Futebol" />
+            </div>
+            <button type="submit" className="w-full bg-emerald-600 py-4 rounded-xl font-black uppercase tracking-widest transition">Confirmar Entrada</button>
           </form>
         </div>
       )}
 
-      {/* Transaction Modal */}
       {isTxModalOpen && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleAddTransaction} className="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 max-w-md w-full space-y-6 shadow-2xl relative">
-            <button type="button" onClick={() => setIsTxModalOpen(false)} className="absolute top-6 right-6 text-slate-500 hover:text-white transition"><X size={24}/></button>
-            <h2 className="text-2xl font-black uppercase tracking-tighter">Fluxo de Caixa</h2>
-            <div className="space-y-4">
-              <select name="type" className="w-full bg-slate-800 border-none rounded-xl px-4 py-4 font-bold outline-none appearance-none">
-                <option value="DEPOSIT">DEPÓSITO (INPUT)</option>
-                <option value="WITHDRAWAL">SAQUE (OUTPUT)</option>
-              </select>
-              <input name="amount" type="number" step="0.01" required className="w-full bg-slate-800 border-none rounded-xl px-4 py-4 font-bold text-white text-xl outline-none" placeholder="Valor R$ 0,00" />
-              <input name="description" required className="w-full bg-slate-800 border-none rounded-xl px-4 py-4 font-bold outline-none" placeholder="Justificativa" />
-            </div>
-            <button type="submit" className="w-full bg-white text-slate-950 hover:bg-slate-200 py-4 rounded-xl font-black uppercase tracking-widest text-sm transition">Confirmar Registro</button>
+          <form onSubmit={handleAddTransaction} className="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 max-w-md w-full space-y-6 relative">
+            <button type="button" onClick={() => setIsTxModalOpen(false)} className="absolute top-6 right-6 text-slate-500"><X size={24}/></button>
+            <h2 className="text-2xl font-black uppercase tracking-tighter">Caixa</h2>
+            <select name="type" className="w-full bg-slate-800 rounded-xl px-4 py-4 font-bold outline-none">
+              <option value="DEPOSIT">DEPÓSITO</option>
+              <option value="WITHDRAWAL">SAQUE</option>
+            </select>
+            <input name="amount" type="number" step="0.01" required className="w-full bg-slate-800 rounded-xl px-4 py-4 font-bold text-white text-xl outline-none" placeholder="Valor R$ 0,00" />
+            <input name="description" required className="w-full bg-slate-800 rounded-xl px-4 py-4 font-bold outline-none" placeholder="Justificativa" />
+            <button type="submit" className="w-full bg-white text-slate-950 py-4 rounded-xl font-black uppercase transition">Confirmar</button>
           </form>
         </div>
       )}
 
-      {/* Settings Modal */}
       {isConfigOpen && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <form onSubmit={updateConfig} className="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 max-w-md w-full space-y-6 shadow-2xl relative">
-            <button type="button" onClick={() => setIsConfigOpen(false)} className="absolute top-6 right-6 text-slate-500 hover:text-white transition"><X size={24}/></button>
-            <h2 className="text-2xl font-black uppercase tracking-tighter text-cyan-400">Settings</h2>
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Saldo Inicial (Banca Início)</label>
-                <input name="initial" type="number" step="0.01" className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold outline-none" defaultValue={bankroll.initialBalance} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Unidade (%)</label>
-                  <input name="risk" type="number" step="0.1" className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold text-emerald-400 outline-none" defaultValue={bankroll.unitValuePercent} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Meta Diária (%)</label>
-                  <input name="goal" type="number" step="0.1" className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold text-amber-500 outline-none" defaultValue={bankroll.dailyGoalPercent} />
-                </div>
-              </div>
-              <p className="text-[10px] text-slate-600 font-bold italic mt-2">Dica: 1.0% de risco é o padrão profissional seguro.</p>
+          <form onSubmit={updateConfig} className="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 max-w-md w-full space-y-6 relative">
+            <button type="button" onClick={() => setIsConfigOpen(false)} className="absolute top-6 right-6 text-slate-500"><X size={24}/></button>
+            <h2 className="text-2xl font-black uppercase text-cyan-400">Settings</h2>
+            <input name="initial" type="number" step="0.01" className="w-full bg-slate-800 rounded-xl px-4 py-3 font-bold outline-none" defaultValue={bankroll.initialBalance} placeholder="Saldo Inicial" />
+            <div className="grid grid-cols-2 gap-4">
+              <input name="risk" type="number" step="0.1" className="w-full bg-slate-800 rounded-xl px-4 py-3 font-bold outline-none" defaultValue={bankroll.unitValuePercent} placeholder="Unidade %" />
+              <input name="goal" type="number" step="0.1" className="w-full bg-slate-800 rounded-xl px-4 py-3 font-bold outline-none" defaultValue={bankroll.dailyGoalPercent} placeholder="Meta %" />
             </div>
-            <button type="submit" className="w-full bg-cyan-600 hover:bg-cyan-500 py-4 rounded-xl font-black uppercase tracking-widest text-sm transition shadow-lg shadow-cyan-600/20">Salvar Ajustes</button>
+            <button type="submit" className="w-full bg-cyan-600 py-4 rounded-xl font-black uppercase tracking-widest transition">Salvar</button>
           </form>
         </div>
       )}

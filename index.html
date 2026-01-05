@@ -1,10 +1,11 @@
-
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Elite Bankroll Manager</title>
+    <!-- Favicon para evitar erro 404 -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>">
     <script type="importmap">
     {
       "imports": {
@@ -19,6 +20,20 @@
     }
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Configuração básica do Tailwind para o modo dark
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              slate: {
+                950: '#020617',
+              }
+            }
+          }
+        }
+      }
+    </script>
 </head>
 <body class="bg-slate-950 text-slate-50 antialiased">
     <div id="root"></div>
