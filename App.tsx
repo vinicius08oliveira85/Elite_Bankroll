@@ -13,7 +13,8 @@ import {
   ArrowDownRight,
   Target,
   Settings,
-  Wallet
+  Wallet,
+  Calendar
 } from 'lucide-react';
 import { 
   XAxis, 
@@ -22,7 +23,10 @@ import {
   Tooltip, 
   ResponsiveContainer,
   AreaChart,
-  Area
+  Area,
+  LineChart,
+  Line,
+  ComposedChart
 } from 'recharts';
 import { 
   OperationStatus, 
@@ -33,17 +37,26 @@ import {
 } from './types';
 import { GoogleGenAI } from "@google/genai";
 
-const STORAGE_KEY = 'elite_bankroll_system_v2';
+const STORAGE_KEY = 'elite_bankroll_system_v3';
+
+// Extensão do estado para incluir metas
+interface ExtendedBankrollState extends BankrollState {
+  dailyGoalPercent: number; // Meta diária de crescimento (ex: 3 para 3%)
+}
 
 const App: React.FC = () => {
-  const [bankroll, setBankroll] = useState<BankrollState>(() => {
+  const [bankroll, setBankroll] = useState<ExtendedBankrollState>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : {
+    const defaultState = {
       initialBalance: 0,
       unitValuePercent: 1.0, 
+      dailyGoalPercent: 3.0,
       transactions: [],
       operations: []
     };
+    if (!saved) return defaultState;
+    const parsed = JSON.parse(saved);
+    return { ...defaultState, ...parsed };
   });
 
   const [isOpModalOpen, setIsOpModalOpen] = useState(false);
@@ -57,6 +70,7 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(bankroll));
   }, [bankroll]);
 
+  // 🧮 Lógica de Cálculo (Core Engine)
   const stats = useMemo(() => {
     const totalDeposits = bankroll.transactions
       .filter(t => t.type === TransactionType.DEPOSIT)
@@ -97,18 +111,37 @@ const App: React.FC = () => {
     };
   }, [bankroll]);
 
+  // 🚀 Melhoria Visual Avançada: Linha de Meta no Gráfico
   const chartData = useMemo(() => {
     let cumulative = bankroll.initialBalance;
-    const data = [{ name: 'Início', balance: cumulative }];
+    const data = [{ 
+      name: 'Start', 
+      balance: cumulative, 
+      goal: cumulative 
+    }];
     
     const timeline = [
-      ...bankroll.operations.map(o => ({ date: o.date, value: o.profitLoss })),
-      ...bankroll.transactions.map(t => ({ date: t.date, value: t.type === TransactionType.DEPOSIT ? t.amount : -t.amount }))
+      ...bankroll.operations.map(o => ({ date: o.date, value: o.profitLoss, type: 'OP' })),
+      ...bankroll.transactions.map(t => ({ 
+        date: t.date, 
+        value: t.type === TransactionType.DEPOSIT ? t.amount : -t.amount,
+        type: 'TX'
+      }))
     ].sort((a, b) => a.date - b.date);
 
-    timeline.forEach((item) => {
+    let goalCumulative = bankroll.initialBalance;
+    const dailyGrowthFactor = 1 + (bankroll.dailyGoalPercent / 100);
+
+    timeline.forEach((item, index) => {
       cumulative += item.value;
-      data.push({ name: new Date(item.date).toLocaleDateString(), balance: cumulative });
+      // Simulação simplificada de meta: crescimento linear projetado por evento
+      goalCumulative *= dailyGrowthFactor; 
+      
+      data.push({ 
+        name: new Date(item.date).toLocaleDateString(), 
+        balance: Number(cumulative.toFixed(2)),
+        goal: Number(goalCumulative.toFixed(2))
+      });
     });
 
     return data;
@@ -192,7 +225,8 @@ const App: React.FC = () => {
     setBankroll(prev => ({
       ...prev,
       initialBalance: Number(fd.get('initial')),
-      unitValuePercent: Number(fd.get('risk'))
+      unitValuePercent: Number(fd.get('risk')),
+      dailyGoalPercent: Number(fd.get('goal'))
     }));
     setIsConfigOpen(false);
   };
@@ -209,7 +243,7 @@ const App: React.FC = () => {
       - Saldo Atual: R$${stats.currentBalance.toFixed(2)}
       - ROI: ${stats.roi.toFixed(2)}%
       - WinRate: ${stats.winRate.toFixed(2)}%
-      - Histórico Recente: ${bankroll.operations.slice(0, 5).map(o => o.status).join(', ')}
+      - Meta Diária: ${bankroll.dailyGoalPercent}%
       - Risco por Unidade: ${bankroll.unitValuePercent}% (R$${stats.unitValue.toFixed(2)})`;
 
       const response = await ai.models.generateContent({
@@ -232,6 +266,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-950 text-slate-50 p-4 md:p-8 font-sans selection:bg-emerald-500/30">
       <div className="max-w-7xl mx-auto space-y-8">
         
+        {/* Header Section */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
           <div className="flex items-center gap-4">
             <div className="h-12 w-12 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
@@ -241,7 +276,7 @@ const App: React.FC = () => {
               <h1 className="text-3xl font-black bg-gradient-to-r from-emerald-400 to-cyan-500 bg-clip-text text-transparent uppercase tracking-tighter">
                 Elite Bankroll
               </h1>
-              <p className="text-slate-500 font-bold text-xs uppercase tracking-widest">Architect System v2</p>
+              <p className="text-slate-500 font-bold text-xs uppercase tracking-widest">Architect System v3</p>
             </div>
           </div>
           <div className="flex gap-3 w-full md:w-auto">
@@ -257,12 +292,13 @@ const App: React.FC = () => {
           </div>
         </header>
 
+        {/* Statistics Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Saldo Atual', val: `R$ ${stats.currentBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, sub: `1un = R$ ${stats.unitValue.toFixed(2)}`, icon: Wallet, color: 'text-white' },
             { label: 'Lucro Líquido', val: `R$ ${stats.totalProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, sub: 'P/L Acumulado', icon: stats.totalProfit >= 0 ? ArrowUpRight : ArrowDownRight, color: stats.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400' },
-            { label: 'ROI', val: `${stats.roi.toFixed(2)}%`, sub: `Yield: ${stats.yieldValue.toFixed(2)}%`, icon: TrendingUp, color: stats.roi >= 0 ? 'text-emerald-400' : 'text-rose-400' },
-            { label: 'Taxa de Acerto', val: `${stats.winRate.toFixed(1)}%`, sub: `${stats.greens}G / ${stats.reds}R`, icon: Target, color: 'text-cyan-400' },
+            { label: 'ROI (%)', val: `${stats.roi.toFixed(2)}%`, sub: `Meta: ${bankroll.dailyGoalPercent}%`, icon: TrendingUp, color: stats.roi >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+            { label: 'Performance', val: `${stats.winRate.toFixed(1)}%`, sub: `${stats.greens}G / ${stats.reds}R`, icon: Target, color: 'text-cyan-400' },
           ].map((s, i) => (
             <div key={i} className="bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
               <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mb-1">{s.label}</p>
@@ -272,14 +308,17 @@ const App: React.FC = () => {
           ))}
         </div>
 
+        {/* Dashboard Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
+            
+            {/* 🚀 Curva de Equity com Linha de Meta */}
             <div className="bg-slate-900/40 border border-slate-800/60 rounded-3xl p-8 h-[400px] shadow-2xl">
               <h3 className="font-black uppercase text-xs tracking-[0.3em] text-slate-500 mb-8 flex items-center gap-3">
-                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500"></div> Curva de Equity
+                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></div> Curva de Equity vs Meta
               </h3>
               <ResponsiveContainer width="100%" height="80%">
-                <AreaChart data={chartData}>
+                <ComposedChart data={chartData}>
                   <defs>
                     <linearGradient id="colorBal" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
@@ -288,22 +327,42 @@ const App: React.FC = () => {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} opacity={0.2} />
                   <XAxis dataKey="name" stroke="#475569" fontSize={10} axisLine={false} tickLine={false} />
-                  <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '12px', fontSize: '12px' }} />
-                  <Area type="monotone" dataKey="balance" stroke="#10b981" fill="url(#colorBal)" strokeWidth={3} />
-                </AreaChart>
+                  <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} tickFormatter={(v) => `R$${v}`} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px' }}
+                    itemStyle={{ fontWeight: 'bold' }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="balance" 
+                    name="Saldo Real"
+                    stroke="#10b981" 
+                    fill="url(#colorBal)" 
+                    strokeWidth={3} 
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="goal" 
+                    name="Meta Projetada"
+                    stroke="#f59e0b" 
+                    strokeDasharray="5 5" 
+                    dot={false} 
+                    strokeWidth={2}
+                  />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
 
+            {/* History Table */}
             <div className="bg-slate-900/40 border border-slate-800/60 rounded-3xl overflow-hidden shadow-2xl">
               <div className="p-8 border-b border-slate-800/60 flex justify-between items-center bg-slate-900/20">
                 <h3 className="font-black uppercase text-xs tracking-[0.3em] text-slate-500 flex items-center gap-3">
-                  <History size={16} className="text-emerald-500" /> Histórico
+                  <History size={16} className="text-emerald-500" /> Histórico de Operações
                 </h3>
                 <div className="flex gap-2">
                   {['ALL', 'GREEN', 'RED', 'REFUND'].map(st => (
                     <button key={st} onClick={() => setFilter(st as any)} className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase transition ${filter === st ? 'bg-slate-800 text-white' : 'text-slate-600 hover:text-slate-400'}`}>
-                      {st}
+                      {st === 'ALL' ? 'Todos' : st}
                     </button>
                   ))}
                 </div>
@@ -337,12 +396,18 @@ const App: React.FC = () => {
                         </td>
                       </tr>
                     ))}
+                    {filteredOperations.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-20 text-center text-slate-600 uppercase font-black tracking-[0.5em] text-xs">Sem registros</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
 
+          {/* Sidebar Insights */}
           <div className="space-y-6">
             <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-3xl p-8 shadow-2xl relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:opacity-10 transition">
@@ -374,19 +439,35 @@ const App: React.FC = () => {
                 <AlertTriangle className="text-rose-500 shrink-0" size={24} />
                 <div>
                   <p className="font-black text-rose-500 uppercase text-[10px] tracking-widest mb-1">Risco Elevado</p>
-                  <p className="text-slate-400 text-xs font-bold leading-snug">Você está em drawdown. Reduza a unidade para preservar capital.</p>
+                  <p className="text-slate-400 text-xs font-bold leading-snug">Drawdown detectado. Reduza o tamanho da unidade para preservar capital.</p>
                 </div>
               </div>
             )}
+
+            <div className="bg-slate-900/30 border border-slate-800 rounded-3xl p-6 space-y-4">
+              <div className="flex justify-between items-center">
+                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Progresso Meta</h4>
+                <span className={`text-[10px] font-black ${stats.totalProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  {((stats.totalProfit / (stats.netInvestment || 1)) * 100).toFixed(1)}% total
+                </span>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                <div 
+                  className="bg-emerald-500 h-full rounded-full transition-all duration-1000" 
+                  style={{ width: `${Math.min(100, Math.max(0, (stats.currentBalance / (stats.netInvestment || 1)) * 100))}%` }}
+                ></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
+      {/* Operation Modal */}
       {isOpModalOpen && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <form onSubmit={handleAddOperation} className="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 max-w-md w-full space-y-6 shadow-2xl relative">
             <button type="button" onClick={() => setIsOpModalOpen(false)} className="absolute top-6 right-6 text-slate-500 hover:text-white transition"><X size={24}/></button>
-            <h2 className="text-2xl font-black uppercase tracking-tighter">Registrar Operação</h2>
+            <h2 className="text-2xl font-black uppercase tracking-tighter">Registrar Entrada</h2>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
@@ -423,11 +504,12 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* Transaction Modal */}
       {isTxModalOpen && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <form onSubmit={handleAddTransaction} className="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 max-w-md w-full space-y-6 shadow-2xl relative">
             <button type="button" onClick={() => setIsTxModalOpen(false)} className="absolute top-6 right-6 text-slate-500 hover:text-white transition"><X size={24}/></button>
-            <h2 className="text-2xl font-black uppercase tracking-tighter">Fluxo Financeiro</h2>
+            <h2 className="text-2xl font-black uppercase tracking-tighter">Fluxo de Caixa</h2>
             <div className="space-y-4">
               <select name="type" className="w-full bg-slate-800 border-none rounded-xl px-4 py-4 font-bold outline-none appearance-none">
                 <option value="DEPOSIT">DEPÓSITO (INPUT)</option>
@@ -436,11 +518,12 @@ const App: React.FC = () => {
               <input name="amount" type="number" step="0.01" required className="w-full bg-slate-800 border-none rounded-xl px-4 py-4 font-bold text-white text-xl outline-none" placeholder="Valor R$ 0,00" />
               <input name="description" required className="w-full bg-slate-800 border-none rounded-xl px-4 py-4 font-bold outline-none" placeholder="Justificativa" />
             </div>
-            <button type="submit" className="w-full bg-white text-slate-950 hover:bg-slate-200 py-4 rounded-xl font-black uppercase tracking-widest text-sm transition">Confirmar Transação</button>
+            <button type="submit" className="w-full bg-white text-slate-950 hover:bg-slate-200 py-4 rounded-xl font-black uppercase tracking-widest text-sm transition">Confirmar Registro</button>
           </form>
         </div>
       )}
 
+      {/* Settings Modal */}
       {isConfigOpen && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <form onSubmit={updateConfig} className="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 max-w-md w-full space-y-6 shadow-2xl relative">
@@ -451,11 +534,17 @@ const App: React.FC = () => {
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Saldo Inicial (Banca Início)</label>
                 <input name="initial" type="number" step="0.01" className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold outline-none" defaultValue={bankroll.initialBalance} />
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Risco por Unidade (%)</label>
-                <input name="risk" type="number" step="0.1" className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold text-emerald-400 outline-none" defaultValue={bankroll.unitValuePercent} />
-                <p className="text-[10px] text-slate-600 font-bold italic mt-2">Dica: 1.0% é o padrão seguro do mercado.</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Unidade (%)</label>
+                  <input name="risk" type="number" step="0.1" className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold text-emerald-400 outline-none" defaultValue={bankroll.unitValuePercent} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Meta Diária (%)</label>
+                  <input name="goal" type="number" step="0.1" className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 font-bold text-amber-500 outline-none" defaultValue={bankroll.dailyGoalPercent} />
+                </div>
               </div>
+              <p className="text-[10px] text-slate-600 font-bold italic mt-2">Dica: 1.0% de risco é o padrão profissional seguro.</p>
             </div>
             <button type="submit" className="w-full bg-cyan-600 hover:bg-cyan-500 py-4 rounded-xl font-black uppercase tracking-widest text-sm transition shadow-lg shadow-cyan-600/20">Salvar Ajustes</button>
           </form>
