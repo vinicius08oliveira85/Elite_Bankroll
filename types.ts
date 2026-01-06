@@ -11,6 +11,8 @@ export enum TransactionType {
   WITHDRAWAL = 'WITHDRAWAL'
 }
 
+export type SentimentType = 'Calmo' | 'Ansioso' | 'Raiva' | 'Excesso de Confiança';
+
 export interface Transaction {
   id: string;
   type: TransactionType;
@@ -24,16 +26,20 @@ export interface Operation {
   date: number;
   description: string;
   status: OperationStatus;
-  stakeUnits: number; // units (ex: 0.5, 1.0, 2.0)
-  stakeAmount: number; // Valor absoluto calculado no momento da entrada
+  stakeUnits: number;
+  stakeAmount: number;
   odd: number;
-  profitLoss: number; // 0 se PENDING, (Stake * (Odd-1)) se GREEN, (-Stake) se RED
+  profitLoss: number;
   category: string;
+  // Novos campos de inteligência
+  sentiment: SentimentType;
+  estimatedProbability: number; // 0-100
+  isPositiveEV: boolean;
 }
 
 export interface BankrollState {
   initialBalance: number;
-  unitValuePercent: number; // Configuração de risco (ex: 1 para 1%)
+  unitValuePercent: number;
   transactions: Transaction[];
   operations: Operation[];
 }
